@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Electrical Safety Hazard Hunt",
+  "description": "An interactive educational game for children to learn about electrical safety by identifying hazards around the home, featuring case-study-backed safety tips and parental guidance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
