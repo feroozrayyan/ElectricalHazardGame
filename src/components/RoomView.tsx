@@ -11,14 +11,17 @@ import {
   Heart, 
   HelpCircle,
   Sparkles,
-  Info
+  Info,
+  RotateCcw,
+  Search,
+  Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Import generated room background images
-import bathroomBg from '../assets/images/bathroom_hazards_bg_1783843741908.jpg';
-import livingroomBg from '../assets/images/livingroom_hazards_bg_1783842235047.jpg';
-import kitchenBg from '../assets/images/kitchen_hazards_bg_1783844083812.jpg';
+// Import generated clean room background images
+import bathroomBg from '../assets/images/room_bathroom_bg_1783840436977.jpg';
+import livingroomBg from '../assets/images/room_livingroom_bg_1783840449526.jpg';
+import kitchenBg from '../assets/images/room_kitchen_bg_1783840463255.jpg';
 import backyardBg from '../assets/images/room_backyard_bg_1783840475192.jpg';
 import streetBg from '../assets/images/room_street_bg_1783840485209.jpg';
 
@@ -139,10 +142,11 @@ interface RoomViewProps {
   roomId: RoomId;
   hazards: Hazard[];
   onSolveHazard: (id: string) => void;
+  onUnsolveHazard?: (id: string) => void;
   onSelectHazard: (hazard: Hazard) => void;
 }
 
-export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazard }: RoomViewProps) {
+export default function RoomView({ roomId, hazards, onSolveHazard, onUnsolveHazard, onSelectHazard }: RoomViewProps) {
   const [activeInspector, setActiveInspector] = useState<string | null>(null);
   const [inspectorText, setInspectorText] = useState<{
     title: string;
@@ -153,6 +157,12 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
   } | null>(null);
   const [draggingHazardId, setDraggingHazardId] = useState<string | null>(null);
   const [currentDragDistance, setCurrentDragDistance] = useState<number>(0);
+
+  // Difficulty / Point-and-Click discovery states
+  const [gameMode, setGameMode] = useState<'rookie' | 'detective'>('detective');
+  const [discoveredHazardIds, setDiscoveredHazardIds] = useState<string[]>([]);
+  const [discoveredSafeIds, setDiscoveredSafeIds] = useState<string[]>([]);
+  const [ripples, setRipples] = useState<{ id: number; x: number; y: number; type: 'hit' | 'miss' | 'safe' }[]>([]);
 
   const DRAG_THRESHOLD = 95; // Pixels to pull out of danger
 
@@ -227,6 +237,72 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
       desc: `Material: ${obj.material}. ${obj.whySafe}`,
       isHazard: false
     });
+  };
+
+  const handleStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // If we clicked directly on an interactive button or child of button, let event propagation handle it
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = ((e.clientX - rect.left) / rect.width) * 100;
+    const clickY = ((e.clientY - rect.top) / rect.height) * 100;
+
+    // Discovery radius in percentage of the image dimension
+    const DISCOVERY_RADIUS = 7.0;
+
+    // 1. Check if clicked near an unsolved, undiscovered hazard
+    let foundHazard: Hazard | null = null;
+    let minHazardDistance = Infinity;
+
+    roomHazards.forEach(hazard => {
+      if (!hazard.solved && !discoveredHazardIds.includes(hazard.id)) {
+        const distance = Math.sqrt((clickX - hazard.x) ** 2 + (clickY - hazard.y) ** 2);
+        if (distance < DISCOVERY_RADIUS && distance < minHazardDistance) {
+          minHazardDistance = distance;
+          foundHazard = hazard;
+        }
+      }
+    });
+
+    // 2. Check if clicked near an undiscovered safe insulator
+    let foundSafeObj: SafeObject | null = null;
+    let minSafeDistance = Infinity;
+
+    roomSafeObjects.forEach(obj => {
+      if (!discoveredSafeIds.includes(obj.id)) {
+        const distance = Math.sqrt((clickX - obj.x) ** 2 + (clickY - obj.y) ** 2);
+        if (distance < DISCOVERY_RADIUS && distance < minSafeDistance) {
+          minSafeDistance = distance;
+          foundSafeObj = obj;
+        }
+      }
+    });
+
+    const rippleId = Date.now();
+
+    if (foundHazard) {
+      const hz = foundHazard as Hazard;
+      setDiscoveredHazardIds(prev => [...prev, hz.id]);
+      setRipples(prev => [...prev, { id: rippleId, x: clickX, y: clickY, type: 'hit' }]);
+      playSuccessSound();
+      handleHazardClick(hz);
+    } else if (foundSafeObj) {
+      const obj = foundSafeObj as SafeObject;
+      setDiscoveredSafeIds(prev => [...prev, obj.id]);
+      setRipples(prev => [...prev, { id: rippleId, x: clickX, y: clickY, type: 'safe' }]);
+      playSafeSound();
+      handleSafeObjectClick(obj);
+    } else {
+      // Miss
+      setRipples(prev => [...prev, { id: rippleId, x: clickX, y: clickY, type: 'miss' }]);
+    }
+
+    // Clean up ripple after transition
+    setTimeout(() => {
+      setRipples(prev => prev.filter(r => r.id !== rippleId));
+    }, 800);
   };
 
   // Render Room Background Graphic & Furniture using high-quality generated images
@@ -304,8 +380,51 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
 
   return (
     <div className="space-y-6">
+      {/* Game Difficulty Selector Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20 shrink-0">
+            {gameMode === 'detective' ? <Search size={18} /> : <Eye size={18} />}
+          </div>
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Gameplay Mode</h3>
+            <p className="text-[10px] text-slate-400 leading-normal">
+              {gameMode === 'detective' 
+                ? '🕵️‍♂️ Detective: Hazards are invisible. Study the room art closely and click on hazards to spot them!' 
+                : '🧭 Rookie: Glowing yellow hazard icons are visible on-screen to guide your search.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-center shrink-0">
+          <button
+            onClick={() => setGameMode('rookie')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
+              gameMode === 'rookie'
+                ? 'bg-indigo-500 text-slate-950 font-black'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>🧭 Rookie (Easy)</span>
+          </button>
+          <button
+            onClick={() => setGameMode('detective')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
+              gameMode === 'detective'
+                ? 'bg-indigo-500 text-slate-950 font-black'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>🕵️‍♂️ Detective (Hard)</span>
+          </button>
+        </div>
+      </div>
+
       {/* Game Stage Area */}
-      <div className="relative w-full aspect-[16/9] md:aspect-[2/1] rounded-3xl border border-slate-800 overflow-hidden shadow-2xl bg-slate-950">
+      <div 
+        onClick={handleStageClick}
+        className="relative w-full aspect-[16/9] md:aspect-[2/1] rounded-3xl border border-slate-800 overflow-hidden shadow-2xl bg-slate-950 cursor-crosshair"
+      >
         
         {/* Render Background Scene */}
         {renderRoomArt()}
@@ -313,10 +432,57 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
         {/* Dynamic Scan lines / Grid Layer */}
         <div className="absolute inset-0 bg-radial-gradient from-transparent to-black/30 pointer-events-none" />
 
+        {/* Detective Mode Progress Badge */}
+        {gameMode === 'detective' && (
+          <div className="absolute top-3 left-3 bg-slate-950/90 backdrop-blur-md border border-slate-800/80 text-[10px] md:text-xs text-indigo-300 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-lg select-none z-30">
+            <span className="animate-pulse">🕵️‍♂️</span>
+            <span>Spotted in this room: <strong className="text-white font-mono">{roomHazards.filter(h => h.solved || discoveredHazardIds.includes(h.id)).length} / {roomHazards.length}</strong></span>
+          </div>
+        )}
+
+        {/* Click Feedback Ripples */}
+        {ripples.map((ripple) => (
+          <div
+            key={ripple.id}
+            style={{ left: `${ripple.x}%`, top: `${ripple.y}%` }}
+            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50"
+          >
+            <motion.div
+              initial={{ scale: 0, opacity: 1 }}
+              animate={{ scale: 4, opacity: 0 }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+              className={`w-8 h-8 rounded-full border-2 ${
+                ripple.type === 'hit'
+                  ? 'border-amber-400 bg-amber-400/20'
+                  : ripple.type === 'safe'
+                  ? 'border-teal-400 bg-teal-400/20'
+                  : 'border-slate-500 bg-slate-500/10'
+              }`}
+            />
+            {/* Tiny flash dot */}
+            <motion.div
+              initial={{ scale: 0.5, opacity: 1 }}
+              animate={{ scale: 1.5, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className={`w-2.5 h-2.5 rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+                ripple.type === 'hit'
+                  ? 'bg-amber-400'
+                  : ripple.type === 'safe'
+                  ? 'bg-teal-400'
+                  : 'bg-slate-400'
+              }`}
+            />
+          </div>
+        ))}
+
         {/* Hazard Hotspots (Conductors) */}
         {roomHazards.map((hazard) => {
           const isDraggingThis = draggingHazardId === hazard.id;
           const isOverThreshold = isDraggingThis && currentDragDistance >= DRAG_THRESHOLD;
+
+          // In detective mode, unsolved hazards must be discovered first to appear
+          const isDiscovered = hazard.solved || gameMode === 'rookie' || discoveredHazardIds.includes(hazard.id);
+          if (!isDiscovered) return null;
 
           return (
             <div
@@ -349,7 +515,7 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
               {/* Solved state vs. Draggable state */}
               {hazard.solved ? (
                 <button
-                  onClick={() => handleHazardClick(hazard)}
+                  onClick={(e) => { e.stopPropagation(); handleHazardClick(hazard); }}
                   className="relative group cursor-pointer"
                 >
                   <div className="h-10 w-10 md:h-12 md:w-12 rounded-full border-2 bg-emerald-500 border-emerald-400 text-slate-950 flex items-center justify-center shadow-xl transition-all scale-95 hover:scale-105">
@@ -369,7 +535,7 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
                   onDragStart={() => handleDragStart(hazard.id)}
                   onDrag={handleDrag}
                   onDragEnd={(e, info) => handleDragEnd(e, info, hazard)}
-                  onClick={() => handleHazardClick(hazard)}
+                  onClick={(e) => { e.stopPropagation(); handleHazardClick(hazard); }}
                   className="relative group cursor-grab active:cursor-grabbing focus:outline-none"
                 >
                   {/* Glowing background circles */}
@@ -389,7 +555,7 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
                   </div>
 
                   {/* Tooltip helper for kids */}
-                  <div className="absolute bottom-13 left-1/2 -translate-x-1/2 bg-slate-950 border border-slate-800 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl flex flex-col items-center gap-0.5">
+                  <div className="absolute bottom-13 left-1/2 -translate-x-1/2 bg-slate-950 border border-slate-800 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl flex flex-col items-center gap-0.5 z-30">
                     <span className="text-amber-400 font-extrabold uppercase text-[9px] tracking-wider">Drag to Safety! ↔️</span>
                     <span className="text-slate-300 font-medium text-[10px]">{hazard.title}</span>
                   </div>
@@ -400,28 +566,38 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
         })}
 
         {/* Safe Objects Hotspots (Insulators) */}
-        {roomSafeObjects.map((obj) => (
-          <button
-            key={obj.id}
-            onClick={() => handleSafeObjectClick(obj)}
-            style={{ left: `${obj.x}%`, top: `${obj.y}%` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group cursor-pointer"
-          >
-            <span className="absolute inset-0 rounded-full bg-teal-500/20 scale-125 animate-pulse group-hover:bg-teal-400/30" />
-            <div className="h-9 w-9 md:h-11 md:w-11 rounded-xl bg-teal-500/25 border border-teal-400/40 hover:border-teal-400 text-base flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95">
-              <span>{obj.emoji}</span>
-            </div>
-            {/* Tooltip on hover */}
-            <div className="absolute bottom-11 left-1/2 -translate-x-1/2 bg-slate-950 border border-slate-800 text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md">
-              Check {obj.name}
-            </div>
-          </button>
-        ))}
+        {roomSafeObjects.map((obj) => {
+          // In detective mode, safe insulators are hidden until spotted as well
+          const isObjDiscovered = gameMode === 'rookie' || discoveredSafeIds.includes(obj.id);
+          if (!isObjDiscovered) return null;
+
+          return (
+            <button
+              key={obj.id}
+              onClick={(e) => { e.stopPropagation(); handleSafeObjectClick(obj); }}
+              style={{ left: `${obj.x}%`, top: `${obj.y}%` }}
+              className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group cursor-pointer"
+            >
+              <span className="absolute inset-0 rounded-full bg-teal-500/20 scale-125 animate-pulse group-hover:bg-teal-400/30" />
+              <div className="h-9 w-9 md:h-11 md:w-11 rounded-xl bg-teal-500/25 border border-teal-400/40 hover:border-teal-400 text-base flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95">
+                <span>{obj.emoji}</span>
+              </div>
+              {/* Tooltip on hover */}
+              <div className="absolute bottom-11 left-1/2 -translate-x-1/2 bg-slate-950 border border-slate-800 text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md z-30">
+                Check {obj.name}
+              </div>
+            </button>
+          );
+        })}
 
         {/* Help Overlay Hint */}
         <div className="absolute bottom-3 right-3 bg-slate-950/80 backdrop-blur-md border border-slate-800/80 text-[10px] md:text-xs text-slate-300 font-medium px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md pointer-events-none">
           <Sparkles className="text-amber-400 animate-pulse" size={12} />
-          <span>Drag <strong className="text-amber-400 font-bold">⚠️ Hazards</strong> OUT of the Red Circle, or inspect <strong className="text-teal-400 font-bold">Insulators</strong>!</span>
+          {gameMode === 'detective' ? (
+            <span>Look closely at the room art and <strong className="text-amber-400 font-bold">click</strong> on any hazard to spot it!</span>
+          ) : (
+            <span>Drag <strong className="text-amber-400 font-bold">⚠️ Hazards</strong> OUT of the Red Circle, or inspect <strong className="text-teal-400 font-bold">Insulators</strong>!</span>
+          )}
         </div>
       </div>
 
@@ -477,7 +653,31 @@ export default function RoomView({ roomId, hazards, onSolveHazard, onSelectHazar
 
                 {/* If it is a hazard, provide a direct CTA button to reveal the case study and full-screen photo */}
                 {inspectorText.isHazard && inspectorText.rawHazard && (
-                  <div className="flex justify-end pt-1">
+                  <div className="flex justify-end gap-2.5 pt-1">
+                    {inspectorText.rawHazard.solved && (
+                      <button
+                        onClick={() => {
+                          if (inspectorText.rawHazard) {
+                            if (onUnsolveHazard) {
+                              onUnsolveHazard(inspectorText.rawHazard.id);
+                            }
+                            // Update inspector view state to reflect the unsolved hazard
+                            setActiveInspector(inspectorText.rawHazard.id);
+                            setInspectorText({
+                              title: `🔒 Unresolved: ${inspectorText.rawHazard.title}`,
+                              desc: `${inspectorText.rawHazard.shortDescription} (Action Required: Drag the warning icon out of the red danger circle to solve it!)`,
+                              isHazard: true,
+                              imageUrl: inspectorText.rawHazard.imageUrl,
+                              rawHazard: { ...inspectorText.rawHazard, solved: false }
+                            });
+                          }
+                        }}
+                        className="bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/35 border border-rose-500/30 text-rose-400 text-xs font-black px-4 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-rose-500/5 hover:-translate-y-0.5 duration-100"
+                      >
+                        <RotateCcw size={12} className="stroke-[2.5]" />
+                        <span>Re-activate Danger Spot ⚠️</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => inspectorText.rawHazard && onSelectHazard(inspectorText.rawHazard)}
                       className="bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-black px-4 py-1.5 rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"

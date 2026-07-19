@@ -7,27 +7,21 @@ import {
   Award, 
   RotateCcw, 
   HelpCircle, 
-  HeartHandshake, 
-  BookOpen, 
   TrendingUp, 
   Trophy,
   CheckCircle2,
   Sparkles,
-  Gamepad2,
   ShieldCheck,
   AlertTriangle,
   Target
 } from 'lucide-react';
 import RoomView from './components/RoomView';
 import HazardModal from './components/HazardModal';
-import QuizView from './components/QuizView';
-import ParentDashboard from './components/ParentDashboard';
 import { playFanfareSound, playSuccessSound } from './utils/audio';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   // Core state
-  const [activeTab, setActiveTab] = useState<'child' | 'quiz' | 'parent'>('child');
   const [activeRoomId, setActiveRoomId] = useState<RoomId>('bathroom');
   const [ageGroup, setAgeGroup] = useState<AgeGroup>('ranger');
   const [hazards, setHazards] = useState<Hazard[]>(HAZARDS);
@@ -140,7 +134,7 @@ export default function App() {
       setTimeout(() => setShowConfetti(false), 4000);
     }
 
-    // Check if ALL 20 hazards in the entire house are solved
+    // Check if ALL 25 hazards in the entire house are solved
     const totalSolved = updatedHazards.filter(h => h.solved).length;
     const masterBadge = 'Master Safety Ranger';
     if (totalSolved === updatedHazards.length && !updatedBadges.includes(masterBadge)) {
@@ -149,6 +143,39 @@ export default function App() {
       playFanfareSound();
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 5000);
+    }
+
+    saveState(updatedHazards, newScore, updatedBadges);
+  };
+
+  const handleUnsolveHazard = (id: string) => {
+    const updatedHazards = hazards.map(h => {
+      if (h.id === id) {
+        return { ...h, solved: false };
+      }
+      return h;
+    });
+
+    const solvedCount = updatedHazards.filter(h => h.solved).length;
+    const newScore = solvedCount * 100;
+    setScore(newScore);
+    setHazards(updatedHazards);
+
+    let updatedBadges = [...unlockedBadges];
+    const roomBadgeName = `${activeRoomId.charAt(0).toUpperCase() + activeRoomId.slice(1)} Badge`;
+    
+    const currentRoomHazards = updatedHazards.filter(h => h.roomId === activeRoomId);
+    const solvedInRoom = currentRoomHazards.filter(h => h.solved);
+    
+    if (solvedInRoom.length < currentRoomHazards.length && updatedBadges.includes(roomBadgeName)) {
+      updatedBadges = updatedBadges.filter(b => b !== roomBadgeName);
+      setUnlockedBadges(updatedBadges);
+    }
+
+    const masterBadge = 'Master Safety Ranger';
+    if (solvedCount < updatedHazards.length && updatedBadges.includes(masterBadge)) {
+      updatedBadges = updatedBadges.filter(b => b !== masterBadge);
+      setUnlockedBadges(updatedBadges);
     }
 
     saveState(updatedHazards, newScore, updatedBadges);
@@ -203,7 +230,8 @@ export default function App() {
     bathroom: "Bathroom",
     livingroom: "Living Room",
     kitchen: "Kitchen",
-    backyard: "Backyard"
+    backyard: "Backyard",
+    street: "Street & Power"
   };
   const activeRoomName = roomNames[activeRoomId] || activeRoomId;
 
@@ -354,44 +382,8 @@ export default function App() {
               <Target size={16} className="text-indigo-400" />
               Mission Objective
             </button>
-
-            <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
-            <button
-              onClick={() => setActiveTab('child')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs md:text-sm font-semibold rounded-xl transition-all cursor-pointer ${
-                activeTab === 'child' 
-                  ? 'bg-indigo-500 text-slate-950 shadow-lg font-bold' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Gamepad2 size={16} />
-              Hazard Hunt Game
-            </button>
-            <button
-              onClick={() => setActiveTab('quiz')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs md:text-sm font-semibold rounded-xl transition-all cursor-pointer ${
-                activeTab === 'quiz' 
-                  ? 'bg-indigo-500 text-slate-950 shadow-lg font-bold' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <BookOpen size={16} />
-              Safety Ranger Quiz
-            </button>
-            <button
-              onClick={() => setActiveTab('parent')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs md:text-sm font-semibold rounded-xl transition-all cursor-pointer ${
-                activeTab === 'parent' 
-                  ? 'bg-indigo-500 text-slate-950 shadow-lg font-bold' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <HeartHandshake size={16} />
-              Parents & Teachers
-            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
       {/* Age Appropriateness Mode Segmented Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-3xl border border-slate-800/80">
@@ -429,199 +421,187 @@ export default function App() {
 
       {/* Dynamic Views */}
       <main className="min-h-[50vh]">
-          {activeTab === 'child' && (
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          
+          {/* Sidebar: Game Stats & Badges */}
+          <div className="lg:col-span-1 space-y-6">
+            
+            {/* Score, Progress & Level Progression Panel */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl relative overflow-hidden flex flex-col gap-4">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
               
-              {/* Sidebar: Game Stats & Badges */}
-              <div className="lg:col-span-1 space-y-6">
-                
-                {/* Score, Progress & Level Progression Panel */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl relative overflow-hidden flex flex-col gap-4">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
-                  
-                  {/* Rank Header */}
-                  <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
-                    <div className="text-3xl bg-slate-950 p-2.5 rounded-2xl border border-slate-800 shadow-inner flex items-center justify-center select-none">
-                      {levelIcon}
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-mono text-indigo-400 font-extrabold tracking-widest block">
-                        {activeRoomName} • Level {activeRoomLevel}
-                      </span>
-                      <h3 className="text-base font-display font-black text-white leading-tight">
-                        {levelTitle}
-                      </h3>
-                    </div>
-                  </div>
-
-                  {/* Level Progression Progress Bar */}
-                  <div>
-                    <div className="flex justify-between items-center text-[11px] mb-1.5">
-                      <span className="text-slate-400 font-medium">Room Progress</span>
-                      <span className="font-mono text-indigo-300 font-bold">
-                        {getNextRankLabel()}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800 p-[1px]">
-                      <div 
-                        className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${levelProgress}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-400 font-medium mt-1.5 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-950">
-                      🎯 <strong className="text-indigo-300">Status:</strong> {levelStatusText}
-                    </p>
-                  </div>
-
-                  {/* Score & Global Stats */}
-                  <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-850">
-                    <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-950">
-                      <span className="text-[9px] uppercase font-mono text-slate-500 block">Ranger Score</span>
-                      <div className="flex items-baseline gap-0.5 mt-0.5">
-                        <span className="text-2xl font-display font-black text-white">{score}</span>
-                        <span className="text-[10px] text-indigo-400 font-mono font-bold">PTS</span>
-                      </div>
-                    </div>
-                    <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-950">
-                      <span className="text-[9px] uppercase font-mono text-slate-500 block">Total Solved</span>
-                      <div className="flex items-baseline gap-0.5 mt-0.5">
-                        <span className="text-2xl font-display font-black text-white">{solvedCount}</span>
-                        <span className="text-[10px] text-indigo-400 font-mono font-bold">/ {totalHazardsCount}</span>
-                      </div>
-                    </div>
-                  </div>
+              {/* Rank Header */}
+              <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+                <div className="text-3xl bg-slate-950 p-2.5 rounded-2xl border border-slate-800 shadow-inner flex items-center justify-center select-none">
+                  {levelIcon}
                 </div>
-
-                {/* Badge Case */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-                  <h3 className="text-sm font-display font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-slate-800 pb-3 mb-4">
-                    <Award size={16} className="text-indigo-400" />
-                    My Safety Badges
+                <div>
+                  <span className="text-[10px] uppercase font-mono text-indigo-400 font-extrabold tracking-widest block">
+                    {activeRoomName} • Level {activeRoomLevel}
+                  </span>
+                  <h3 className="text-base font-display font-black text-white leading-tight">
+                    {levelTitle}
                   </h3>
-
-                  <div className="space-y-3">
-                    {/* Badge List */}
-                    {[
-                      { name: 'Bathroom Badge', desc: 'Solved water/electricity hazards', emoji: '🛀' },
-                      { name: 'Livingroom Badge', desc: 'Solved wire/socket hazards', emoji: '🛋️' },
-                      { name: 'Kitchen Badge', desc: 'Solved kitchen appliance hazards', emoji: '🍳' },
-                      { name: 'Backyard Badge', desc: 'Solved outdoor/wire hazards', emoji: '🌳' },
-                      { name: 'Master Safety Ranger', desc: 'Completed all 20 hazards', emoji: '👑' }
-                    ].map((badge, bIdx) => {
-                      const isUnlocked = unlockedBadges.includes(badge.name);
-                      return (
-                        <div 
-                          key={bIdx}
-                          className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all ${
-                            isUnlocked 
-                              ? 'bg-slate-950 border-indigo-500/20 text-slate-100' 
-                              : 'bg-slate-950/40 border-slate-900 text-slate-600'
-                          }`}
-                        >
-                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center text-lg ${
-                            isUnlocked ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-900 border border-slate-900'
-                          }`}>
-                            {isUnlocked ? badge.emoji : '🔒'}
-                          </div>
-                          <div>
-                            <h4 className={`text-xs font-bold ${isUnlocked ? 'text-slate-200' : 'text-slate-500'}`}>
-                              {badge.name}
-                            </h4>
-                            <p className="text-[10px] text-slate-400 font-medium">
-                              {badge.desc}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Reset Progress */}
-                <div className="pt-2 text-center">
-                  <button
-                    onClick={resetGame}
-                    className="text-xs text-slate-500 hover:text-rose-400 font-medium flex items-center gap-1.5 mx-auto transition-colors cursor-pointer"
-                  >
-                    <RotateCcw size={12} />
-                    Reset Ranger Progress
-                  </button>
                 </div>
               </div>
 
-              {/* Game Board: Interactive Rooms */}
-              <div className="lg:col-span-3 space-y-6">
-                
-                {/* Room Selector Tab buttons */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 bg-slate-900 p-2 rounded-2xl border border-slate-800">
-                  {ROOMS.map((room) => {
-                    const isRoomActive = activeRoomId === room.id;
-                    const roomHazards = activeHazards.filter(h => h.roomId === room.id);
-                    const solvedInRoom = roomHazards.filter(h => h.solved).length;
-                    const isFullySolved = roomHazards.length > 0 && solvedInRoom === roomHazards.length;
-
-                    return (
-                      <button
-                        key={room.id}
-                        onClick={() => setActiveRoomId(room.id as RoomId)}
-                        className={`p-3.5 rounded-xl text-left transition-all relative cursor-pointer ${
-                          isRoomActive 
-                            ? 'bg-slate-950 border border-slate-800 text-white shadow-md' 
-                            : 'hover:bg-slate-950/60 text-slate-400'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold block">{room.label}</span>
-                          {isFullySolved && (
-                            <span className="text-xs text-emerald-400 animate-pulse">✓</span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-400 block mt-1 font-mono">
-                          {solvedInRoom} of {roomHazards.length} hazards
-                        </span>
-                      </button>
-                    );
-                  })}
+              {/* Level Progression Progress Bar */}
+              <div>
+                <div className="flex justify-between items-center text-[11px] mb-1.5">
+                  <span className="text-slate-400 font-medium">Room Progress</span>
+                  <span className="font-mono text-indigo-300 font-bold">
+                    {getNextRankLabel()}
+                  </span>
                 </div>
-
-                {/* Interactive Stage Box */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-                  <div>
-                    <h2 className="text-xl font-display font-black text-white flex items-center gap-2">
-                      <span>Room Map:</span>
-                      <span className="text-indigo-400 font-medium">
-                        {ROOMS.find(r => r.id === activeRoomId)?.label}
-                      </span>
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-1">
-                      {ROOMS.find(r => r.id === activeRoomId)?.description}
-                    </p>
-                  </div>
-
-                  <RoomView
-                    roomId={activeRoomId}
-                    hazards={activeHazards.map(h => getAdaptedHazard(h, ageGroup))}
-                    onSolveHazard={handleSolveHazard}
-                    onSelectHazard={setSelectedHazard}
+                <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800 p-[1px]">
+                  <div 
+                    className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${levelProgress}%` }}
                   />
                 </div>
+                <p className="text-[10px] text-slate-400 font-medium mt-1.5 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-950">
+                  🎯 <strong className="text-indigo-300">Status:</strong> {levelStatusText}
+                </p>
               </div>
 
+              {/* Score & Global Stats */}
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-850">
+                <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-950">
+                  <span className="text-[9px] uppercase font-mono text-slate-500 block">Ranger Score</span>
+                  <div className="flex items-baseline gap-0.5 mt-0.5">
+                    <span className="text-2xl font-display font-black text-white">{score}</span>
+                    <span className="text-[10px] text-indigo-400 font-mono font-bold">PTS</span>
+                  </div>
+                </div>
+                <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-950">
+                  <span className="text-[9px] uppercase font-mono text-slate-500 block">Total Solved</span>
+                  <div className="flex items-baseline gap-0.5 mt-0.5">
+                    <span className="text-2xl font-display font-black text-white">{solvedCount}</span>
+                    <span className="text-[10px] text-indigo-400 font-mono font-bold">/ {totalHazardsCount}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
 
-          {activeTab === 'quiz' && (
-            <div className="py-4">
-              <QuizView ageGroup={ageGroup} />
-            </div>
-          )}
+            {/* Badge Case */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+              <h3 className="text-sm font-display font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-slate-800 pb-3 mb-4">
+                <Award size={16} className="text-indigo-400" />
+                My Safety Badges
+              </h3>
 
-          {activeTab === 'parent' && (
-            <div className="py-4">
-              <ParentDashboard />
+              <div className="space-y-3">
+                {/* Badge List */}
+                {[
+                  { name: 'Bathroom Badge', desc: 'Solved water/electricity hazards', emoji: '🛀' },
+                  { name: 'Livingroom Badge', desc: 'Solved wire/socket hazards', emoji: '🛋️' },
+                  { name: 'Kitchen Badge', desc: 'Solved kitchen appliance hazards', emoji: '🍳' },
+                  { name: 'Backyard Badge', desc: 'Solved outdoor/wire hazards', emoji: '🌳' },
+                  { name: 'Street Badge', desc: 'Solved street & neighborhood hazards', emoji: '🛣️' },
+                  { name: 'Master Safety Ranger', desc: 'Completed all 25 hazards', emoji: '👑' }
+                ].map((badge, bIdx) => {
+                  const isUnlocked = unlockedBadges.includes(badge.name);
+                  return (
+                    <div 
+                      key={bIdx}
+                      className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all ${
+                        isUnlocked 
+                          ? 'bg-slate-950 border-indigo-500/20 text-slate-100' 
+                          : 'bg-slate-950/40 border-slate-900 text-slate-600'
+                      }`}
+                    >
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center text-lg ${
+                        isUnlocked ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-900 border border-slate-900'
+                      }`}>
+                        {isUnlocked ? badge.emoji : '🔒'}
+                      </div>
+                      <div>
+                        <h4 className={`text-xs font-bold ${isUnlocked ? 'text-slate-200' : 'text-slate-500'}`}>
+                          {badge.name}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {badge.desc}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          )}
-        </main>
+
+            {/* Reset Progress */}
+            <div className="pt-2 text-center">
+              <button
+                onClick={resetGame}
+                className="text-xs text-slate-500 hover:text-rose-400 font-medium flex items-center gap-1.5 mx-auto transition-colors cursor-pointer"
+              >
+                <RotateCcw size={12} />
+                Reset Ranger Progress
+              </button>
+            </div>
+          </div>
+
+          {/* Game Board: Interactive Rooms */}
+          <div className="lg:col-span-3 space-y-6">
+            
+            {/* Room Selector Tab buttons */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 bg-slate-900 p-2 rounded-2xl border border-slate-800">
+              {ROOMS.map((room) => {
+                const isRoomActive = activeRoomId === room.id;
+                const roomHazards = activeHazards.filter(h => h.roomId === room.id);
+                const solvedInRoom = roomHazards.filter(h => h.solved).length;
+                const isFullySolved = roomHazards.length > 0 && solvedInRoom === roomHazards.length;
+
+                return (
+                  <button
+                    key={room.id}
+                    onClick={() => setActiveRoomId(room.id as RoomId)}
+                    className={`p-3.5 rounded-xl text-left transition-all relative cursor-pointer ${
+                      isRoomActive 
+                        ? 'bg-slate-950 border border-slate-800 text-white shadow-md' 
+                        : 'hover:bg-slate-950/60 text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold block">{room.label}</span>
+                      {isFullySolved && (
+                        <span className="text-xs text-emerald-400 animate-pulse">✓</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1 font-mono">
+                      {solvedInRoom} of {roomHazards.length} hazards
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Interactive Stage Box */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+              <div>
+                <h2 className="text-xl font-display font-black text-white flex items-center gap-2">
+                  <span>Room Map:</span>
+                  <span className="text-indigo-400 font-medium">
+                    {ROOMS.find(r => r.id === activeRoomId)?.label}
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  {ROOMS.find(r => r.id === activeRoomId)?.description}
+                </p>
+              </div>
+
+              <RoomView
+                roomId={activeRoomId}
+                hazards={activeHazards.map(h => getAdaptedHazard(h, ageGroup))}
+                onSolveHazard={handleSolveHazard}
+                onUnsolveHazard={handleUnsolveHazard}
+                onSelectHazard={setSelectedHazard}
+              />
+            </div>
+          </div>
+
+        </div>
+      </main>
       </div>
 
       {/* Pop-up modal details for selected hazard */}
@@ -804,7 +784,7 @@ export default function App() {
                     <div>
                       <h4 className="text-xs font-bold text-slate-200">Investigate Active Zones</h4>
                       <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                        Scan the 4 primary locations: <span className="text-indigo-400 font-medium">Bathroom</span>, <span className="text-indigo-400 font-medium">Living Room</span>, <span className="text-indigo-400 font-medium">Kitchen</span>, and <span className="text-indigo-400 font-medium">Backyard</span>.
+                        Scan the 5 primary locations: <span className="text-indigo-400 font-medium">Bathroom</span>, <span className="text-indigo-400 font-medium">Living Room</span>, <span className="text-indigo-400 font-medium">Kitchen</span>, <span className="text-indigo-400 font-medium">Backyard</span>, and <span className="text-indigo-400 font-medium">Street & Power</span>.
                       </p>
                     </div>
                   </div>
@@ -834,7 +814,7 @@ export default function App() {
                     <div>
                       <h4 className="text-xs font-bold text-slate-200">Earn Safety Badges</h4>
                       <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                        Eliminate all 5 hazards in an area to lock down the room and claim its badge. Secure all 4 badges to become a Master Ranger!
+                        Eliminate all 5 hazards in an area to lock down the room and claim its badge. Secure all 5 badges to become a Master Ranger!
                       </p>
                     </div>
                   </div>
